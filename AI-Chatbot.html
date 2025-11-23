@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Real Estate Agent (Pro)</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Google Icon font -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+    <style>
+        /* Chat bubble styling */
+        .chat-bubble-user {
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+            align-self: flex-end;
+        }
+        .chat-bubble-ai {
+            background-color: #e5e7eb; /* gray-200 */
+            color: #1f2937; /* gray-800 */
+            align-self: flex-start;
+        }
+        .chat-bubble {
+            max-width: 80%;
+            padding: 10px 16px;
+            border-radius: 16px;
+            margin-bottom: 8px;
+            word-wrap: break-word;
+        }
+        /* Custom scrollbar */
+        #chat-container::-webkit-scrollbar { width: 6px; }
+        #chat-container::-webkit-scrollbar-track { background: #f1f5f9; }
+        #chat-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    </style>
+</head>
+<body class="h-full flex items-center justify-center bg-gray-100 font-sans">
+
+    <!-- Modal for API Key -->
+    <div id="modal-backdrop" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h2 class="text-xl font-semibold mb-4">Welcome!</h2>
+            <p class="mb-4 text-gray-700">Please provide your Gemini API Key to start the demo.</p>
+            <input 
+                type="password" 
+                id="api-key-input" 
+                placeholder="Enter your Gemini API Key here" 
+                class="w-full px-3 py-2 border rounded-md"
+            >
+            <button id="save-api-key" class="mt-4 w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600">
+                Start Chat
+            </button>
+            <p class="mt-2 text-xs text-gray-500">Your key is only stored in your browser for this session.</p>
+        </div>
+    </div>
+
+    <!-- Main Chat UI (Hidden by default) -->
+    <div id="chat-ui" class="hidden w-full max-w-lg h-[90vh] bg-white rounded-xl shadow-2xl flex flex-col p-4">
+        
+        <!-- Header -->
+        <div class="flex-shrink-0 border-b pb-4 flex items-center justify-between">
+            <div class="flex items-center">
+                <div class="relative">
+                    <img src="https://placehold.co/48x48/2563eb/ffffff?text=AI" alt="AI Agent" class="w-12 h-12 rounded-full">
+                    <span class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+                </div>
+                <div class="ml-4">
+                    <h2 class="text-xl font-semibold text-gray-800">Alex</h2>
+                    <p class="text-sm text-green-600">Online | Real Estate Agent</p>
+                </div>
+            </div>
+            <div class="text-xs text-gray-500">
+                <p>User ID:</p>
+                <p id="user-id-display" class="font-mono break-all">Authenticating...</p>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col">
+            <!-- Initial greeting will be added by JS after properties load -->
+        </div>
+
+        <!-- "AI is typing" indicator -->
+        <div id="loading-indicator" class="hidden flex-shrink-0 p-2 flex items-center">
+            <span class="material-symbols-outlined text-gray-500 animate-spin">progress_activity</span>
+            <p class="ml-2 text-sm text-gray-500">Alex is typing...</p>
+        </div>
+
+        <!-- Input Bar -->
+        <div class="flex-shrink-0 border-t pt-4">
+            <div class="flex bg-gray-100 rounded-full px-4 py-2 items-center">
+                <input 
+                    type="text" 
+                    id="user-input" 
+                    placeholder="Ask about properties, budget..." 
+                    class="flex-1 bg-transparent border-none outline-none text-gray-800 placeholder-gray-500"
+                    disabled
+                >
+                <button id="send-button" class="ml-3 p-2 bg-blue-500 rounded-full text-white hover:bg-blue-600 transition-colors focus:outline-none" disabled>
+                    <span class="material-symbols-outlined">send</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Firebase modules -->
+    <script type="module">
+        // Import Firebase modules with ALIAS to prevent naming conflicts
+        import { initializeApp as initFirebase } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL VARIABLES (MANDATORY FOR FIREBASE) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-demo-app';
+        
+        // **!! IMPORTANT !!**
+        // **PASTE YOUR FIREBASE CONFIG OBJECT HERE**
+        // (Get this from Firebase Console > Project Settings > Your apps)
+      	const firebaseConfig = {
+  	apiKey: "AIzaSyAuEM0hVnsRrk-3ZefmiPd9hA9EpcWYiok",
+ 	 authDomain: "ai-hyderabad-demo.firebaseapp.com",
+ 	 projectId: "ai-hyderabad-demo",
+ 	 storageBucket: "ai-hyderabad-demo.firebasestorage.app",
+ 	 messagingSenderId: "737901319872",
+  	appId: "1:737901319872:web:ebe09da7fa460f02527f25",
+ 	 measurementId: "G-0TWE7QY11C"
+	};
+        // Use the injected config if available, otherwise use our manual one
+        const finalFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
+        
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- CHATBOT CONFIGURATION ---
+        let GEMINI_API_KEY = "";
+        let API_URL = "";
+        let PROPERTY_DATABASE = "[]"; // Will be loaded from Firestore
+        let SYSTEM_PROMPT = ""; // Will be set after properties are loaded
+
+        // --- FIREBASE & APP INITIALIZATION ---
+        let db, auth, userId;
+
+        async function initializeServices() {
+            try {
+                // Initialize Firebase (Using the alias 'initFirebase' to avoid collision)
+                const app = initFirebase(finalFirebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Sign in the user
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                userId = auth.currentUser?.uid || crypto.randomUUID();
+                document.getElementById('user-id-display').textContent = userId;
+
+                // Load properties from Firestore
+                await fetchPropertiesFromFirestore();
+
+            } catch (error) {
+                console.error("Firebase Init Error:", error);
+                addMessageToUI(`Error: Could not connect to services. Please check if you pasted the Firebase Config correctly. Detailed Error: ${error.message}`, 'ai');
+            }
+        }
+
+        // --- DATA FETCHING ---
+        async function fetchPropertiesFromFirestore() {
+            try {
+                // This queries a collection named "properties_{appId}"
+                const collectionName = `properties_${appId}`;
+                const querySnapshot = await getDocs(collection(db, collectionName));
+                
+                const properties = [];
+                querySnapshot.forEach((doc) => {
+                    properties.push(doc.data());
+                });
+
+                if (properties.length === 0) {
+                    addMessageToUI("Connected to Database! But I couldn't find any properties in the collection 'properties_default-demo-app'. Please add some data in the Firebase Console.", 'ai');
+                    return;
+                }
+
+                // Convert the property list to a JSON string for the AI
+                PROPERTY_DATABASE = JSON.stringify(properties, null, 2);
+                
+                // Now that we have data, set the system prompt
+                setSystemPrompt();
+                
+                // And send the welcome message
+                sendWelcomeMessage();
+
+            } catch (error) {
+                console.error("Firestore Error:", error);
+                addMessageToUI(`Error: Could not load properties from database. ${error.message}`, 'ai');
+            }
+        }
+
+        // --- CHATBOT LOGIC ---
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const modal = document.getElementById('modal-backdrop');
+        const chatUI = document.getElementById('chat-ui');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const saveApiKeyButton = document.getElementById('save-api-key');
+
+        let conversationHistory = [];
+
+        saveApiKeyButton.addEventListener('click', () => {
+            GEMINI_API_KEY = apiKeyInput.value.trim();
+            if (GEMINI_API_KEY) {
+                API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+                modal.classList.add('hidden');
+                chatUI.classList.remove('hidden');
+                initializeServices(); // Start Firebase & data loading *after* getting key
+            } else {
+                alert("Please enter a valid API Key.");
+            }
+        });
+
+        function setSystemPrompt() {
+            SYSTEM_PROMPT = `
+You are 'Alex', a cheerful and highly professional AI sales agent for a Hyderabad Real Estate Firm.
+Your ONLY goal is to help users find a property from the provided JSON list and convince them to book a site visit.
+
+**Your Knowledge Base (This is the ONLY data you can use):**
+${PROPERTY_DATABASE}
+
+**Your Rules:**
+1.  **Be Conversational:** Do not sound like a robot. Be friendly and helpful.
+2.  **Use Your Knowledge:** ONLY recommend properties from the JSON list. Do not make up properties or locations.
+3.  **Qualify the Lead:** Always try to find out the user's requirements (e.g., location, budget in Crores, BHK type).
+4.  **Push for the Goal:** Your primary goal is to get the user to agree to a "site visit" or "book a viewing".
+5.  **Handle Rejection:** If a user's budget or requirement doesn't match anything in your list, politely tell them you don't have a match *right now* but recommend the *closest* alternative from your list.
+6.  **Book the Visit:** When the user shows interest and agrees to a visit, respond with: "That's wonderful! You can book a slot directly on our calendar: [BOOKING_LINK:https://calendly.com/YOUR-CALENDLY-LINK-HERE]". This is a special tag.
+7.  **Be Concise:** Keep your answers to 2-3 sentences.
+`;
+        }
+
+        function sendWelcomeMessage() {
+            const welcomeMsg = "Hello! I'm Alex, your AI real estate assistant. I've just loaded our latest Hyderabad properties. How can I help you find your dream home today?";
+            addMessageToUI(welcomeMsg, 'ai');
+            conversationHistory = [{
+                "role": "model",
+                "parts": [{ "text": welcomeMsg }]
+            }];
+            userInput.disabled = false;
+            sendButton.disabled = false;
+        }
+
+        sendButton.addEventListener('click', handleUserMessage);
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                handleUserMessage();
+            }
+        });
+
+        function handleUserMessage() {
+            const message = userInput.value.trim();
+            if (message === "") return;
+
+            addMessageToUI(message, 'user');
+            conversationHistory.push({
+                "role": "user",
+                "parts": [{ "text": message }]
+            });
+
+            userInput.value = "";
+            userInput.disabled = true;
+            sendButton.disabled = true;
+            loadingIndicator.classList.remove('hidden');
+
+            callGeminiAPI();
+        }
+
+        async function callGeminiAPI() {
+            try {
+                const payload = {
+                    contents: conversationHistory,
+                    systemInstruction: {
+                        parts: [{ text: SYSTEM_PROMPT }]
+                    }
+                };
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates.length > 0) {
+                    const aiResponse = data.candidates[0].content.parts[0].text;
+                    handleAIResponse(aiResponse);
+                } else {
+                    handleAIResponse("I'm sorry, I can't respond to that. Could we talk about properties instead?");
+                }
+
+            } catch (error) {
+                console.error(error);
+                handleAIResponse(`My apologies. I'm facing a technical issue. ${error.message}. Please try again.`);
+            } finally {
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                loadingIndicator.classList.add('hidden');
+                userInput.focus();
+            }
+        }
+
+        function handleAIResponse(response) {
+            // Check for our special "booking" tag
+            // ESCAPED FORWARD SLASHES HERE TO FIX SYNTAX ERROR
+            const bookingRegex = /\[BOOKING_LINK:(https:\/\/[^\]]+)\]/;
+            const match = response.match(bookingRegex);
+
+            if (match) {
+                const plainText = response.replace(bookingRegex, "").trim();
+                const url = match[1];
+                
+                addMessageToUI(plainText, 'ai');
+                
+                // Add a special "booking" button
+                const bookingMsg = document.createElement('div');
+                bookingMsg.classList.add('chat-bubble', 'chat-bubble-ai');
+                bookingMsg.innerHTML = `
+                    <p class="mb-2">Great! You can book your site visit right here:</p>
+                    <a href="${url}" target="_blank" class="inline-flex items-center bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">
+                        <span class="material-symbols-outlined mr-2">calendar_month</span>
+                        Book Now on Calendly
+                    </a>
+                `;
+                chatContainer.appendChild(bookingMsg);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            } else {
+                addMessageToUI(response, 'ai');
+            }
+
+            conversationHistory.push({
+                "role": "model",
+                "parts": [{ "text": response }]
+            });
+        }
+
+        function addMessageToUI(message, sender) {
+            const bubble = document.createElement('div');
+            bubble.classList.add('chat-bubble', `chat-bubble-${sender}`);
+            
+            const text = document.createElement('p');
+            text.textContent = message;
+            bubble.appendChild(text);
+            
+            chatContainer.appendChild(bubble);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+    </script>
+</body>
+</html>
